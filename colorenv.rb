@@ -45,17 +45,18 @@ end
 def print_var(args, key)
     k = key.bold.colorize(args[:kc].to_sym) 
     v = ENV[key].colorize(args[:vc].to_sym)
-    if key == "PATH" && args[:path]
-        pretty_path(args)
+    val = ENV[key]
+    if ENV[key].include?(':/') && args[:path]
+        pretty_path(args, key)
     else
         "#{args[:icon]} #{k} = #{v}"
     end
 end
 
-def pretty_path(args)
-    path = ENV['PATH'].split(':')
-    title_len = "#{args[:icon]} PATH = ".size
-    out_str = "#{args[:icon]} #{"PATH".colorize(args[:kc].to_sym)} = "
+def pretty_path(args, key)
+    path = ENV[key].split(':')
+    title_len = "#{args[:icon]} #{key} = ".size
+    out_str = "#{args[:icon]} #{key.bold.colorize(args[:kc].to_sym)} = "
     path.each do |p|
         if p == path.last
             out_str = out_str + p.colorize(args[:vc].to_sym)
