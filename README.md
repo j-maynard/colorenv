@@ -34,6 +34,6 @@ Features:
 ```
 
 # Todo
-[] Turn in to a proper Gem
-[] Add man entry
-[] Rewrite in Go or Rust for speed
+[ ] Turn in to a proper Gem
+[ ] Add man entry
+[ ] Rewrite in Go or Rust for speed
