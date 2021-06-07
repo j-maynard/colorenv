@@ -58,11 +58,8 @@ def pretty_path(args, key)
     title_len = "#{args[:icon]} #{key} = ".size
     out_str = "#{args[:icon]} #{key.bold.colorize(args[:kc].to_sym)} = "
     path.each do |p|
-        if p == path.last
-            out_str = out_str + p.colorize(args[:vc].to_sym)
-        else
-            out_str = out_str + p.colorize(args[:vc].to_sym) + "%-#{title_len+1}.#{title_len+1}s" % "\n"
-        end
+        out_str = "#{out_str} #{args[:folder_icon]} #{p.colorize(args[:vc].to_sym)}"
+        out_str = "#{out_str} #{"%-#{title_len+1}.#{title_len+1}s" % "\n"}" unless p == path.last
     end
     out_str
 end
@@ -71,11 +68,8 @@ def json_output(keys)
     out = "{"
     keys.each do |key|
         next unless ENV[key]
-        if keys.last == key
-            out = out + var_to_json(key)
-        else
-            out = out + var_to_json(key) + ","
-        end
+        out = "#{out} #{var_to_json(key)}"
+        out = "#{out}, " unless keys.last == key
     end
     out = out + "}"
     puts out
@@ -105,7 +99,8 @@ end
 
 json_out = false
 vars = Set[]
-args = { :json_out => false, :vc => "blue", :kc => "green", :icon => " ", :path => false, :sort => false }
+args = { :json_out => false, :vc => "blue", :kc => "green", :icon => " ", :folder_icon => " ",
+         :path => false, :sort => false }
 unflagged_args = []
 next_arg = unflagged_args.first
 
@@ -120,7 +115,9 @@ ARGV.each do |arg|
         when "-j", "--to-json" then args[:json_out] = true
         when "-v", "-vc", "--value-color" then next_arg = :vc
         when "-k", "-kc", "--key-color" then next_arg = :kc
-        when "-i", "--no-icon" then args[:icon] = ""
+        when "-i", "--no-icon" then
+            args[:icon] = ""
+            args[:folder_icon] = ""
         when "-p", "--path-expand" then args[:path] = true
         when "-n", "--no-sort" then args[:sort] = false
         when "-h", "--help" then
