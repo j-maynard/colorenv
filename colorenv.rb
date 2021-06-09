@@ -5,9 +5,13 @@ require 'env'
 require 'colorize'
 require 'json'
 require 'set'
+require 'pry'
+require 'io/console'
 
+rows,cols = IO.console.winsize
 colors = ""
 count = 0
+$BASE_PATHS = Regexp.new "/bin|/Users|/sbin|/home|/var|/opt|/mnt|/usr|:/|/boot|/etc|/dev|/lib|/tmp|/run|/sys"
 String.colors.each do |c|
     colors = "#{colors} #{c.to_s.colorize(c)}"
     colors = "#{colors}, " if c != String.colors.last
@@ -21,13 +25,16 @@ end
 
 HELP = <<ENDHELP
   Usage: 
-    colorenv -v <color> -k <color> envar1 envar2 envar3
+    colorenv -s
+    colorenv -C <color> -c <color> envar1 envar2 envar3
     colorenv -j envar1 envar2 envar3
 
   Options:
     -j, --to-json             Outputs to JSON (no color) so you can pipe to jq if you want
-    -v, -vc, --value-color    Specifices the color to use for values
-    -k, -kc, --key-color      Specifices the color to use for keys
+    -s, --sort                Sorts the environment keys (a-z)
+    -v, --value               Returns just the value (with icon, or use -i to supress the icon)
+    -c, -vc, --value-color    Specifices the color to use for values
+    -C, -kc, --key-color      Specifices the color to use for keys
     -p, --path-expand         Turns on path expansion
     -i, --no-icon             Turns off the icon
 
@@ -42,24 +49,26 @@ def var_to_json(arg)
     "\"#{arg}\": #{ENV[arg].to_json}"
 end
 
-def print_var(args, key)
-    k = key.bold.colorize(args[:kc].to_sym) 
+def print_var(args, key, max_key_len)
+    k = key.ljust(max_key_len,' ').bold.colorize(args[:kc].to_sym)
     v = ENV[key].colorize(args[:vc].to_sym)
-    val = ENV[key]
-    if ENV[key].include?(':/') && args[:path]
-        pretty_path(args, key)
-    else
-        "#{args[:icon]} #{k} = #{v}"
-    end
+    "#{args[:icon]} #{k}#{args[:string_icon]}#{v}"
 end
 
-def pretty_path(args, key)
+def pretty_path(args, key, max_key_len)
     path = ENV[key].split(':')
-    title_len = "#{args[:icon]} #{key} = ".size
-    out_str = "#{args[:icon]} #{key.bold.colorize(args[:kc].to_sym)} = "
+    k = key.ljust(max_key_len,' ')
+    ck = k.bold.colorize(args[:kc].to_sym) 
+    out_str = "#{args[:icon]} #{ck}"
     path.each do |p|
-        out_str = "#{out_str} #{args[:folder_icon]} #{p.colorize(args[:vc].to_sym)}"
-        out_str = "#{out_str} #{"%-#{title_len+1}.#{title_len+1}s" % "\n"}" unless p == path.last
+        cp = p.colorize(args[:vc].to_sym)
+        if p.match?($BASE_PATHS)
+            out_str = "#{out_str}#{args[:folder_icon]} #{cp}"
+        else
+            out_str = "#{out_str}#{args[:unknown_icon]} #{cp}"
+        end
+        
+        out_str = "#{out_str}#{"\n".ljust(k.length+4,' ')}" unless p == path.last
     end
     out_str
 end
@@ -77,15 +86,45 @@ end
 
 def pretty_output(args, vars)
     out = ""
+    max_key_len = ENV.keys.max_by(&:length).length+2
     vars.each do |key|
         next unless ENV[key]
-        out = out + print_var(args, key) + "\n"
+        path_name = Regexp.new "/?PATH?"
+        is_path = false
+        if key.match(path_name) || ENV[key].match?($BASE_PATHS)
+            is_path = true
+        end
+        if is_path && args[:path]
+            out = "#{out}#{pretty_path(args, key, max_key_len)}\n"
+        else
+            out = "#{out}#{print_var(args,key,max_key_len)}\n"
+        end
     end
     puts(out)
 end
 
+def parse_to_regex(str)
+    escaped = Regexp.escape(str).gsub('\*','.*?')
+    Regexp.new "^#{escaped}$", Regexp::IGNORECASE
+  end
+
+def match_vars(vars)
+    matched_vars = Set[]
+    vars.each do |v|
+        regex = parse_to_regex(v)
+        matches = ENV.keys.select{|i| i[regex]}
+        matched_vars.merge(matches)
+    end
+    matched_vars.to_a
+end
+
 def sort_output(args, vars)
-    vars = ENV.keys if vars.size == 0
+    if vars.size == 0
+        vars = ENV.keys
+    else
+        vars = match_vars(vars)
+    end
+    
     if args[:sort]
         vars = vars.sort
     end
@@ -100,7 +139,7 @@ end
 json_out = false
 vars = Set[]
 args = { :json_out => false, :vc => "blue", :kc => "green", :icon => " ", :folder_icon => " ",
-         :path => false, :sort => false }
+         :string_icon => "識 ", :unknown_icon => "ﴕ ", :eq_icon => "", :path => false, :sort => false }
 unflagged_args = []
 next_arg = unflagged_args.first
 
@@ -113,13 +152,13 @@ args[:sort] = true if ENV['SORT_ENVARS'] == "true"
 ARGV.each do |arg|
     case arg
         when "-j", "--to-json" then args[:json_out] = true
-        when "-v", "-vc", "--value-color" then next_arg = :vc
-        when "-k", "-kc", "--key-color" then next_arg = :kc
+        when "-c", "-vc", "--value-color" then next_arg = :vc
+        when "-C", "-kc", "--key-color" then next_arg = :kc
         when "-i", "--no-icon" then
             args[:icon] = ""
             args[:folder_icon] = ""
         when "-p", "--path-expand" then args[:path] = true
-        when "-n", "--no-sort" then args[:sort] = false
+        when "-s", "--sort" then args[:sort] = true
         when "-h", "--help" then
             puts HELP
             exit 0
@@ -128,7 +167,7 @@ ARGV.each do |arg|
                 args[next_arg] = arg
                 unflagged_args.delete( next_arg )
             else
-                vars.add(arg.upcase)
+                vars.merge(arg.upcase.split(' '))
             end
             next_arg = unflagged_args.first
     end
